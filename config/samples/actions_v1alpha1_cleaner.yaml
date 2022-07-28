@@ -1,0 +1,6 @@
+apiVersion: actions.cnative.dev/v1alpha1
+kind: Cleaner
+metadata:
+  name: cleaner-sample
+spec:
+  # TODO(user): Add fields here
