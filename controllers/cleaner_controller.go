@@ -18,14 +18,20 @@ package controllers
 
 import (
 	"context"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+
+	actionsv1alpha1 "github.com/cnative-dev/cnative-operator/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	actionsv1alpha1 "github.com/cnative-dev/cnative-operator/api/v1alpha1"
 )
+
+const ActionName = "cleaner"
 
 // CleanerReconciler reconciles a Cleaner object
 type CleanerReconciler struct {
@@ -49,7 +55,30 @@ type CleanerReconciler struct {
 func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	cleaner := &actionsv1alpha1.Cleaner{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name: actionsv1alpha1.ConfigResourceName,
+	}, cleaner); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	namespace := corev1.Namespace{}
+	if err := r.Get(ctx, req.NamespacedName, &namespace); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if enable, exists := namespace.GetLabels()["cnative/operator.actions."+ActionName]; !exists || enable == "false" {
+		return ctrl.Result{}, nil
+	}
+
+	if namespace.CreationTimestamp.Add(time.Duration(cleaner.Spec.TTL) * time.Duration(time.Second)).Before(time.Now()) {
+		if err := r.Delete(ctx, &namespace); err != nil {
+			if errors.IsNotFound(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -57,6 +86,6 @@ func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 // SetupWithManager sets up the controller with the Manager.
 func (r *CleanerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&actionsv1alpha1.Cleaner{}).
+		For(&corev1.Namespace{}).
 		Complete(r)
 }
