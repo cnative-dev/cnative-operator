@@ -42,6 +42,7 @@ type CleanerReconciler struct {
 //+kubebuilder:rbac:groups=actions.cnative.dev,resources=cleaners,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=actions.cnative.dev,resources=cleaners/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=actions.cnative.dev,resources=cleaners/finalizers,verbs=update
+//+kubebuilder:rbac:groups=v1,resources=namespaces,verbs=get;list;watch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -53,33 +54,39 @@ type CleanerReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.1/pkg/reconcile
 func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
-
+	logger := log.FromContext(ctx)
+	logger.Info("Reconcile...")
 	cleaner := &actionsv1alpha1.Cleaner{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name: actionsv1alpha1.ConfigResourceName,
 	}, cleaner); err != nil {
+		logger.Error(err, "Error Get Cleaner")
 		return ctrl.Result{}, err
 	}
 
 	namespace := corev1.Namespace{}
 	if err := r.Get(ctx, req.NamespacedName, &namespace); err != nil {
+		logger.Error(err, "Error Get Namespace")
 		return ctrl.Result{}, err
 	}
+	logger.Info("Get Namespace:" + namespace.GetName())
 
 	if enable, exists := namespace.GetLabels()["cnative/operator.actions."+ActionName]; !exists || enable == "false" {
+		logger.Info("Cleaner not activated")
 		return ctrl.Result{}, nil
 	}
 
 	if namespace.CreationTimestamp.Add(time.Duration(cleaner.Spec.TTL) * time.Duration(time.Second)).Before(time.Now()) {
 		if err := r.Delete(ctx, &namespace); err != nil {
 			if errors.IsNotFound(err) {
+				logger.Error(err, "Not Found when Delete, requeue")
 				return ctrl.Result{Requeue: true}, nil
 			}
+			logger.Error(err, "Ops")
 			return ctrl.Result{}, err
 		}
 	}
-
+	logger.Info("Deleted")
 	return ctrl.Result{}, nil
 }
 
