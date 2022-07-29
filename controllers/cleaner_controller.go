@@ -33,7 +33,6 @@ import (
 )
 
 const ActionName = "cleaner"
-const resync = time.Duration(10) * time.Minute
 
 // CleanerReconciler reconciles a Cleaner object
 type CleanerReconciler struct {
@@ -44,7 +43,7 @@ type CleanerReconciler struct {
 //+kubebuilder:rbac:groups=actions.cnative.dev,resources=cleaners,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=actions.cnative.dev,resources=cleaners/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=actions.cnative.dev,resources=cleaners/finalizers,verbs=update
-//+kubebuilder:rbac:groups=v1,resources=namespaces,verbs=get;list;watch;delete
+//+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -93,7 +92,8 @@ func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	if namespace.CreationTimestamp.Add(time.Duration(ttl) * time.Duration(time.Second)).Before(time.Now()) {
+	ddl := namespace.CreationTimestamp.Add(time.Duration(ttl) * time.Duration(time.Second))
+	if ddl.Before(time.Now()) {
 		if err := r.Delete(ctx, namespace); err != nil {
 			if errors.IsNotFound(err) {
 				logger.Error(err, "Not Found when Delete, skip")
@@ -106,7 +106,7 @@ func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	} else {
 		logger.Info("No expired, requeue later...")
-		return ctrl.Result{RequeueAfter: resync}, nil
+		return ctrl.Result{RequeueAfter: time.Until(ddl) + time.Second*1}, nil
 	}
 }
 
