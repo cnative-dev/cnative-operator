@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,7 @@ import (
 )
 
 const ActionName = "cleaner"
+const resync = time.Duration(10) * time.Minute
 
 // CleanerReconciler reconciles a Cleaner object
 type CleanerReconciler struct {
@@ -56,16 +58,25 @@ type CleanerReconciler struct {
 func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconcile...")
+	ttl := actionsv1alpha1.DefaultTTL
 	cleaner := &actionsv1alpha1.Cleaner{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name: actionsv1alpha1.ConfigResourceName,
-	}, cleaner); err != nil {
-		logger.Error(err, "Error Get Cleaner")
-		return ctrl.Result{}, err
+		Namespace: "",
+		Name:      actionsv1alpha1.ConfigResourceName,
+	}, cleaner); err == nil {
+		ttl = cleaner.Spec.TTL
+	} else {
+		if !errors.IsNotFound(err) {
+			logger.Error(err, "Error Get Cleaner")
+			return ctrl.Result{}, err
+		}
 	}
 
-	namespace := corev1.Namespace{}
-	if err := r.Get(ctx, req.NamespacedName, &namespace); err != nil {
+	namespace := &corev1.Namespace{}
+	if err := r.Get(ctx, req.NamespacedName, namespace); err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
 		logger.Error(err, "Error Get Namespace")
 		return ctrl.Result{}, err
 	}
@@ -76,18 +87,27 @@ func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	if namespace.CreationTimestamp.Add(time.Duration(cleaner.Spec.TTL) * time.Duration(time.Second)).Before(time.Now()) {
-		if err := r.Delete(ctx, &namespace); err != nil {
+	if customTTL, exists := namespace.GetLabels()["cnative/operator.actions."+ActionName+".ttl"]; exists {
+		if intCustomTTL, err := strconv.Atoi(customTTL); err == nil {
+			ttl = intCustomTTL
+		}
+	}
+
+	if namespace.CreationTimestamp.Add(time.Duration(ttl) * time.Duration(time.Second)).Before(time.Now()) {
+		if err := r.Delete(ctx, namespace); err != nil {
 			if errors.IsNotFound(err) {
-				logger.Error(err, "Not Found when Delete, requeue")
-				return ctrl.Result{Requeue: true}, nil
+				logger.Error(err, "Not Found when Delete, skip")
+				return ctrl.Result{}, nil
 			}
 			logger.Error(err, "Ops")
 			return ctrl.Result{}, err
 		}
+		logger.Info("Deleted")
+		return ctrl.Result{}, nil
+	} else {
+		logger.Info("No expired, requeue later...")
+		return ctrl.Result{RequeueAfter: resync}, nil
 	}
-	logger.Info("Deleted")
-	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

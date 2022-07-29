@@ -32,6 +32,7 @@ import (
 var cleanerlog = logf.Log.WithName("cleaner-resource")
 
 const ConfigResourceName = "cleaner"
+const DefaultTTL = 3600
 
 func (r *Cleaner) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
@@ -50,7 +51,7 @@ func (r *Cleaner) Default() {
 	cleanerlog.Info("default", "name", r.Name)
 
 	if r.Spec.TTL == 0 {
-		r.Spec.TTL = 3600
+		r.Spec.TTL = DefaultTTL
 	}
 }
 
