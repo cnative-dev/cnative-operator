@@ -52,9 +52,9 @@ type CleanerReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.1/pkg/reconcile
 func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	ttl := DefaultTTL
 
 	namespace := &corev1.Namespace{}
+
 	if err := r.Get(ctx, req.NamespacedName, namespace); err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -63,11 +63,15 @@ func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	if namespace.Status.Phase == corev1.NamespaceTerminating {
+		return ctrl.Result{}, nil
+	}
+
 	if enable, exists := namespace.GetLabels()["cnative/operator.actions."+ActionName]; !exists || enable == "false" {
 		logger.Info(namespace.GetName() + " cleaner not activated")
 		return ctrl.Result{}, nil
 	}
-
+	ttl := DefaultTTL
 	if customTTL, exists := namespace.GetLabels()["cnative/operator.actions."+ActionName+".ttl"]; exists {
 		if intCustomTTL, err := strconv.Atoi(customTTL); err == nil {
 			ttl = intCustomTTL
