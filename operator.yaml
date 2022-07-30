@@ -1,0 +1,222 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: cnative-operator
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cnative-controller-manager
+  namespace: cnative-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cnative-leader-election-role
+  namespace: cnative-operator
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: cnative-manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cnative-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cnative-proxy-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cnative-leader-election-rolebinding
+  namespace: cnative-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cnative-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: cnative-controller-manager
+  namespace: cnative-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cnative-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cnative-manager-role
+subjects:
+- kind: ServiceAccount
+  name: cnative-controller-manager
+  namespace: cnative-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cnative-proxy-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cnative-proxy-role
+subjects:
+- kind: ServiceAccount
+  name: cnative-controller-manager
+  namespace: cnative-operator
+---
+apiVersion: v1
+data:
+  controller_manager_config.yaml: "apiVersion: controller-runtime.sigs.k8s.io/v1alpha1\nkind:
+    ControllerManagerConfig\nhealth:\n  healthProbeBindAddress: :8081\nmetrics:\n
+    \ bindAddress: 127.0.0.1:8080\nwebhook:\n  port: 9443\nleaderElection:\n  leaderElect:
+    true\n  resourceName: 3c4aa3ea.cnative.dev\n#   leaderElectionReleaseOnCancel
+    defines if the leader should step down volume \n#   when the Manager ends. This
+    requires the binary to immediately end when the\n#   Manager is stopped, otherwise,
+    this setting is unsafe. Setting this significantly\n#   speeds up voluntary leader
+    transitions as the new leader don't have to wait\n#   LeaseDuration time first.\n#
+    \  In the default scaffold provided, the program ends immediately after \n#   the
+    manager stops, so would be fine to enable this option. However, \n#   if you are
+    doing or is intended to do any operation such as perform cleanups \n#   after
+    the manager stops then its usage might be unsafe.\n#   leaderElectionReleaseOnCancel:
+    true\n"
+kind: ConfigMap
+metadata:
+  name: cnative-manager-config
+  namespace: cnative-operator
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: cnative-controller-manager-metrics-service
+  namespace: cnative-operator
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: https
+  selector:
+    control-plane: controller-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: cnative-controller-manager
+  namespace: cnative-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --leader-elect
+        command:
+        - /manager
+        image: cnativedev/operator:latest
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+      securityContext:
+        runAsNonRoot: true
+      serviceAccountName: cnative-controller-manager
+      terminationGracePeriodSeconds: 10
