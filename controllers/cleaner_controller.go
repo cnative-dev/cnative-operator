@@ -24,15 +24,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 
-	actionsv1alpha1 "github.com/cnative-dev/cnative-operator/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const ActionName = "cleaner"
+const DefaultTTL = 3600
 
 // CleanerReconciler reconciles a Cleaner object
 type CleanerReconciler struct {
@@ -40,9 +39,6 @@ type CleanerReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=actions.cnative.dev,resources=cleaners,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=actions.cnative.dev,resources=cleaners/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=actions.cnative.dev,resources=cleaners/finalizers,verbs=update
 //+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -56,33 +52,19 @@ type CleanerReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.1/pkg/reconcile
 func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("Reconcile...")
-	ttl := actionsv1alpha1.DefaultTTL
-	cleaner := &actionsv1alpha1.Cleaner{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Namespace: "",
-		Name:      actionsv1alpha1.ConfigResourceName,
-	}, cleaner); err == nil {
-		ttl = cleaner.Spec.TTL
-	} else {
-		if !errors.IsNotFound(err) {
-			logger.Error(err, "Error Get Cleaner")
-			return ctrl.Result{}, err
-		}
-	}
+	ttl := DefaultTTL
 
 	namespace := &corev1.Namespace{}
 	if err := r.Get(ctx, req.NamespacedName, namespace); err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
-		logger.Error(err, "Error Get Namespace")
+		logger.Error(err, "Error Get Namespace: "+namespace.GetName())
 		return ctrl.Result{}, err
 	}
-	logger.Info("Get Namespace:" + namespace.GetName())
 
 	if enable, exists := namespace.GetLabels()["cnative/operator.actions."+ActionName]; !exists || enable == "false" {
-		logger.Info("Cleaner not activated")
+		logger.Info(namespace.GetName() + " cleaner not activated")
 		return ctrl.Result{}, nil
 	}
 
@@ -102,10 +84,10 @@ func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			logger.Error(err, "Ops")
 			return ctrl.Result{}, err
 		}
-		logger.Info("Deleted")
+		logger.Info(namespace.GetName() + " deleting...")
 		return ctrl.Result{}, nil
 	} else {
-		logger.Info("No expired, requeue later...")
+		logger.Info(namespace.GetName() + " not expired, requeue later...")
 		return ctrl.Result{RequeueAfter: time.Until(ddl) + time.Second*1}, nil
 	}
 }

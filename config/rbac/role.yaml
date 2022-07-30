@@ -6,32 +6,6 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - actions.cnative.dev
-  resources:
-  - cleaners
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - actions.cnative.dev
-  resources:
-  - cleaners/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - actions.cnative.dev
-  resources:
-  - cleaners/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
   - ""
   resources:
   - namespaces
