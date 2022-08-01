@@ -67,12 +67,12 @@ func (r *CleanerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	if enable, exists := namespace.GetLabels()["cnative/operator.actions."+ActionName]; !exists || enable == "false" {
+	if enable, exists := namespace.GetAnnotations()["cnative/operator.actions."+ActionName]; !exists || enable == "false" {
 		logger.Info(namespace.GetName() + " cleaner not activated")
 		return ctrl.Result{}, nil
 	}
 	ttl := DefaultTTL
-	if customTTL, exists := namespace.GetLabels()["cnative/operator.actions."+ActionName+".ttl"]; exists {
+	if customTTL, exists := namespace.GetAnnotations()["cnative/operator.actions."+ActionName+".ttl"]; exists {
 		if intCustomTTL, err := strconv.Atoi(customTTL); err == nil {
 			ttl = intCustomTTL
 		}
